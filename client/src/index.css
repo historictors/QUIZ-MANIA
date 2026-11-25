@@ -1,0 +1,98 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #FFDE59;
+  --color-primary-hover: #FFE885;
+  --color-secondary: #4D96FF;
+  --color-secondary-container: #DCEBFF;
+  --color-accent: #FF90E8;
+  --color-completed: #C9B6FF;
+  --color-success: #6BCB77;
+  --color-warning: #FFA94D;
+  --color-error: #FF6B6B;
+  --color-error-container: #FFD6D6;
+
+  --color-background: #FFF8E7;
+  --color-surface: #FFF8E7;
+  --color-surface-dim: #F2E8CF;
+  --color-surface-bright: #FFFFFF;
+  --color-surface-container: #F5ECD7;
+  --color-surface-container-high: #E8DFC8;
+  --color-surface-container-highest: #DDD3BA;
+
+  --color-on-surface: #000000;
+  --color-outline: #000000;
+
+  --font-display: "Space Grotesk", sans-serif;
+  --font-headline: "Space Grotesk", sans-serif;
+  --font-title: "Space Grotesk", sans-serif;
+  --font-body: "DM Sans", sans-serif;
+  --font-label: "Space Grotesk", sans-serif;
+  --font-mono: "Space Mono", monospace;
+
+  --border-width-3: 3px;
+}
+
+/* Neo-Brutalist utility classes */
+.nb-border {
+  border: 3px solid #000000;
+}
+
+.nb-card {
+  border: 3px solid #000000;
+  box-shadow: 6px 6px 0 #000000;
+  border-radius: 4px;
+}
+
+.nb-card-sm {
+  border: 3px solid #000000;
+  box-shadow: 4px 4px 0 #000000;
+  border-radius: 4px;
+}
+
+.nb-btn {
+  border: 3px solid #000000;
+  box-shadow: 4px 4px 0 #000000;
+  border-radius: 4px;
+  font-family: var(--font-label);
+  font-weight: 700;
+  transition: transform 100ms ease-out, box-shadow 100ms ease-out;
+}
+
+.nb-btn:hover:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0 #000000;
+}
+
+.nb-btn:active:not(:disabled) {
+  transform: translate(4px, 4px);
+  box-shadow: 0 0 0 #000000;
+}
+
+.nb-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: 2px 2px 0 #000000;
+}
+
+.nb-input {
+  border: 3px solid #000000;
+  box-shadow: 4px 4px 0 #000000;
+  border-radius: 4px;
+  background-color: #FFFFFF;
+  color: #000000;
+  font-family: var(--font-body);
+  transition: box-shadow 100ms ease-out;
+}
+
+.nb-input:focus {
+  outline: none;
+  box-shadow: 6px 6px 0 #000000;
+}
+
+.nb-badge {
+  border: 2px solid #000000;
+  font-family: var(--font-label);
+  font-weight: 700;
+  text-transform: uppercase;
+}
