@@ -1,30 +1,58 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useApp } from '../../context/AppContext';
+import { useAuth } from '../../context/AuthContext';
 import { Card, Input, Button } from '../../components';
-import { Sparkles, ArrowRight, ShieldCheck } from 'lucide-react';
+import API from '../../services/api';
+import { Sparkles, ArrowRight, AlertCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export const Login = () => {
-  const [email, setEmail] = useState('arjun@college.com');
-  const [password, setPassword] = useState('password123');
-  const [selectedRole, setSelectedRole] = useState('student');
-  const { switchRole } = useApp();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
+  const [loading, setLoading] = useState(false);
+  const { login } = useAuth();
   const navigate = useNavigate();
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
+    setErrorMessage('');
+
     if (!email || !password) {
-      toast.error('Please enter email and password');
+      setErrorMessage('Please enter both email and password.');
       return;
     }
 
-    switchRole(selectedRole);
-    toast.success(`Welcome back! Logged in as ${selectedRole.toUpperCase()}`);
+    setLoading(true);
+    try {
+      const res = await API.post('/auth/login', {
+        email: email.trim(),
+        password
+      });
 
-    if (selectedRole === 'student') navigate('/student');
-    else if (selectedRole === 'faculty') navigate('/faculty');
-    else if (selectedRole === 'admin') navigate('/admin');
+      if (res.data?.success && res.data?.data) {
+        const { user, token } = res.data.data;
+        login(user, token);
+        toast.success(`Welcome back, ${user.name}!`);
+
+        // Redirect based on role
+        if (user.role === 'admin') {
+          navigate('/admin');
+        } else if (user.role === 'faculty') {
+          navigate('/faculty');
+        } else if (user.role === 'student') {
+          navigate('/student');
+        } else {
+          navigate('/');
+        }
+      }
+    } catch (err) {
+      const msg = err.response?.data?.message || 'Failed to sign in. Please verify your credentials.';
+      setErrorMessage(msg);
+      toast.error(msg);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -54,35 +82,17 @@ export const Login = () => {
             </p>
           </div>
 
-          <form onSubmit={handleLogin} className="flex flex-col gap-4">
-            {/* Role Selector Chip (for convenient testing of each role) */}
-            <div className="flex flex-col gap-1.5">
-              <label className="font-label text-xs uppercase font-bold text-black">
-                Select Your Role
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                {['student', 'faculty', 'admin'].map((r) => (
-                  <button
-                    key={r}
-                    type="button"
-                    onClick={() => {
-                      setSelectedRole(r);
-                      if (r === 'student') setEmail('arjun@college.com');
-                      else if (r === 'faculty') setEmail('sharma@college.com');
-                      else if (r === 'admin') setEmail('admin@college.com');
-                    }}
-                    className={`py-1.5 px-2 border-2 border-black rounded font-label text-xs uppercase font-bold transition-transform cursor-pointer ${
-                      selectedRole === r
-                        ? 'bg-[#FFDE59] shadow-[2px_2px_0_#000000] -translate-y-0.5'
-                        : 'bg-white hover:bg-neutral-100'
-                    }`}
-                  >
-                    {r}
-                  </button>
-                ))}
-              </div>
+          {/* Red error box for API error messages */}
+          {errorMessage && (
+            <div className="bg-[#FFD6D6] border-2 border-[#FF6B6B] p-3 rounded flex items-start gap-2.5 shadow-[2px_2px_0_#000000]">
+              <AlertCircle size={18} className="text-[#FF6B6B] shrink-0 mt-0.5" />
+              <p className="font-body text-xs text-black font-semibold">
+                {errorMessage}
+              </p>
             </div>
+          )}
 
+          <form onSubmit={handleLogin} className="flex flex-col gap-4">
             <Input
               id="login-email"
               type="email"
@@ -90,7 +100,7 @@ export const Login = () => {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="e.g. name@college.com"
+              placeholder="e.g. admin@college.com"
             />
 
             <Input
@@ -108,8 +118,9 @@ export const Login = () => {
               variant="primary"
               size="lg"
               className="w-full mt-2"
+              disabled={loading}
             >
-              <span>SIGN IN</span>
+              <span>{loading ? 'SIGNING IN...' : 'SIGN IN'}</span>
               <ArrowRight size={18} />
             </Button>
           </form>
@@ -126,14 +137,6 @@ export const Login = () => {
             </p>
           </div>
         </Card>
-
-        {/* Notice Box */}
-        <div className="bg-[#FFE885] border-2 border-black p-3 rounded shadow-[3px_3px_0_#000000] flex items-center gap-2.5">
-          <ShieldCheck size={20} className="shrink-0 text-black" />
-          <p className="font-body text-xs text-black">
-            Demo Mode: Click any role button above to pre-fill test credentials.
-          </p>
-        </div>
       </div>
     </div>
   );

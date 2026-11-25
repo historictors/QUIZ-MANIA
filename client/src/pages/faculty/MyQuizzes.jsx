@@ -1,15 +1,33 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Table, Badge, Button, Input, ConfirmDialog, EmptyState } from '../../components';
-import { mockQuizzes } from '../../data/sampleData';
-import { PlusCircle, Search, Edit3, Trash2, Eye } from 'lucide-react';
+import { Table, Badge, Button, Input, ConfirmDialog, EmptyState, Loader } from '../../components';
+import API from '../../services/api';
+import { PlusCircle, Edit3, Trash2, Eye } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export const MyQuizzes = () => {
   const navigate = useNavigate();
-  const [quizzes, setQuizzes] = useState(mockQuizzes);
+  const [quizzes, setQuizzes] = useState([]);
   const [search, setSearch] = useState('');
   const [deleteId, setDeleteId] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchQuizzes = async () => {
+    try {
+      const res = await API.get('/faculty/quizzes');
+      if (res.data?.success) {
+        setQuizzes(res.data.data);
+      }
+    } catch (err) {
+      toast.error('Failed to load your quizzes');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchQuizzes();
+  }, []);
 
   const filteredQuizzes = quizzes.filter(
     (q) =>
@@ -17,17 +35,20 @@ export const MyQuizzes = () => {
       q.subject.toLowerCase().includes(search.toLowerCase())
   );
 
-  const handleDelete = () => {
-    const targetQuiz = quizzes.find((q) => q._id === deleteId);
-    if (targetQuiz && targetQuiz.attemptCount > 0) {
-      toast.error('Locked: students have already attempted this quiz');
+  const handleDelete = async () => {
+    if (!deleteId) return;
+    try {
+      const res = await API.delete(`/faculty/quizzes/${deleteId}`);
+      if (res.data?.success) {
+        toast.success(res.data.message || 'Quiz deleted successfully');
+        fetchQuizzes();
+      }
+    } catch (err) {
+      const msg = err.response?.data?.message || 'Failed to delete quiz';
+      toast.error(msg);
+    } finally {
       setDeleteId(null);
-      return;
     }
-
-    setQuizzes(quizzes.filter((q) => q._id !== deleteId));
-    toast.success('Quiz deleted successfully');
-    setDeleteId(null);
   };
 
   return (
@@ -62,7 +83,9 @@ export const MyQuizzes = () => {
         />
       </div>
 
-      {filteredQuizzes.length === 0 ? (
+      {loading ? (
+        <Loader message="Loading quizzes..." />
+      ) : filteredQuizzes.length === 0 ? (
         <EmptyState
           title="No quizzes found"
           description={search ? 'No quizzes match your search criteria.' : 'You have not created any quizzes yet.'}
@@ -82,58 +105,64 @@ export const MyQuizzes = () => {
             'Actions'
           ]}
         >
-          {filteredQuizzes.map((quiz) => (
-            <tr key={quiz._id} className="hover:bg-[#FFF8E7] transition-colors">
-              <td className="p-3.5 font-bold font-headline text-black whitespace-nowrap">
-                {quiz.title}
-              </td>
-              <td className="p-3.5 text-neutral-700 whitespace-nowrap">
-                {quiz.subject}
-              </td>
-              <td className="p-3.5 font-mono text-xs whitespace-nowrap">
-                {quiz.timeLimit} mins
-              </td>
-              <td className="p-3.5 font-mono text-xs text-neutral-700 whitespace-nowrap">
-                {new Date(quiz.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </td>
-              <td className="p-3.5 font-mono text-xs text-neutral-700 whitespace-nowrap">
-                {new Date(quiz.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </td>
-              <td className="p-3.5 font-mono font-bold whitespace-nowrap">
-                {quiz.attemptCount}
-              </td>
-              <td className="p-3.5 whitespace-nowrap">
-                <Badge status={quiz.status} />
-              </td>
-              <td className="p-3.5 whitespace-nowrap flex items-center gap-1.5">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => navigate(`/faculty/quizzes/${quiz._id}/results`)}
-                  title="View Results"
-                >
-                  <Eye size={14} />
-                  <span>RESULTS</span>
-                </Button>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => navigate(`/faculty/quizzes/${quiz._id}/edit`)}
-                  title="Edit Quiz"
-                >
-                  <Edit3 size={14} />
-                </Button>
-                <Button
-                  variant="danger"
-                  size="sm"
-                  onClick={() => setDeleteId(quiz._id)}
-                  title="Delete Quiz"
-                >
-                  <Trash2 size={14} />
-                </Button>
-              </td>
-            </tr>
-          ))}
+          {filteredQuizzes.map((quiz) => {
+            const isLocked = quiz.attemptCount > 0;
+
+            return (
+              <tr key={quiz._id} className="hover:bg-[#FFF8E7] transition-colors">
+                <td className="p-3.5 font-bold font-headline text-black whitespace-nowrap">
+                  {quiz.title}
+                </td>
+                <td className="p-3.5 text-neutral-700 whitespace-nowrap">
+                  {quiz.subject}
+                </td>
+                <td className="p-3.5 font-mono text-xs whitespace-nowrap">
+                  {quiz.timeLimit} mins
+                </td>
+                <td className="p-3.5 font-mono text-xs text-neutral-700 whitespace-nowrap">
+                  {new Date(quiz.startTime).toLocaleString()}
+                </td>
+                <td className="p-3.5 font-mono text-xs text-neutral-700 whitespace-nowrap">
+                  {new Date(quiz.endTime).toLocaleString()}
+                </td>
+                <td className="p-3.5 font-mono font-bold whitespace-nowrap">
+                  {quiz.attemptCount || 0}
+                </td>
+                <td className="p-3.5 whitespace-nowrap">
+                  <Badge status={quiz.status} />
+                </td>
+                <td className="p-3.5 whitespace-nowrap flex items-center gap-1.5">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => navigate(`/faculty/quizzes/${quiz._id}/results`)}
+                    title="View Results"
+                  >
+                    <Eye size={14} />
+                    <span>RESULTS</span>
+                  </Button>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    disabled={isLocked}
+                    title={isLocked ? 'Locked: students have attempted' : 'Edit Quiz'}
+                    onClick={() => navigate(`/faculty/quizzes/${quiz._id}/edit`)}
+                  >
+                    <Edit3 size={14} />
+                  </Button>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    disabled={isLocked}
+                    title={isLocked ? 'Locked: students have attempted' : 'Delete Quiz'}
+                    onClick={() => setDeleteId(quiz._id)}
+                  >
+                    <Trash2 size={14} />
+                  </Button>
+                </td>
+              </tr>
+            );
+          })}
         </Table>
       )}
 
@@ -143,7 +172,7 @@ export const MyQuizzes = () => {
         onClose={() => setDeleteId(null)}
         onConfirm={handleDelete}
         title="DELETE QUIZ?"
-        message="Are you sure you want to delete this quiz? If students have already attempted it, deletion will be blocked."
+        message="Are you sure you want to delete this quiz? If students have already attempted it, deletion will be blocked by the server."
         confirmText="YES, DELETE"
         cancelText="CANCEL"
         variant="danger"

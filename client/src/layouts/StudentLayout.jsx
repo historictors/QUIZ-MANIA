@@ -1,13 +1,12 @@
 import React, { useState } from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet } from 'react-router-dom';
 import Topbar from './Topbar';
-import { LayoutDashboard, Award, X, Sparkles } from 'lucide-react';
-import { useApp } from '../context/AppContext';
+import { LayoutDashboard, Award, X } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 export const StudentLayout = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const { user } = useApp();
-  const navigate = useNavigate();
+  const { user } = useAuth();
 
   const navLinks = [
     { label: 'Dashboard', path: '/student', icon: LayoutDashboard },
@@ -27,7 +26,7 @@ export const StudentLayout = () => {
           />
         )}
 
-        {/* Sidebar (Desktop + Mobile Drawer) */}
+        {/* Sidebar */}
         <aside
           className={`fixed lg:static top-0 bottom-0 left-0 z-50 w-64 bg-[#4D96FF] border-r-[3px] border-black p-5 flex flex-col justify-between transition-transform duration-200 ease-in-out lg:translate-x-0 ${
             isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
@@ -76,7 +75,10 @@ export const StudentLayout = () => {
               Roll Number
             </span>
             <span className="font-mono text-sm font-bold text-black">
-              {user?.rollNumber || '21CSE045'}
+              {user?.rollNumber || 'N/A'}
+            </span>
+            <span className="font-body text-xs text-neutral-700">
+              Year {user?.year || '1'}
             </span>
           </div>
         </aside>

@@ -1,11 +1,40 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { StatCard, Card, Table, Button } from '../../components';
-import { mockFacultyList, mockStudentList, mockDepartments, mockQuizzes } from '../../data/sampleData';
+import { StatCard, Card, Button, Loader } from '../../components';
+import API from '../../services/api';
 import { Users, GraduationCap, Building2, FileQuestion, ArrowRight } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 export const AdminDashboard = () => {
   const navigate = useNavigate();
+  const [stats, setStats] = useState({
+    faculty: 0,
+    students: 0,
+    departments: 0,
+    quizzes: 0
+  });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchDashboard = async () => {
+      try {
+        const res = await API.get('/admin/dashboard');
+        if (res.data?.success && res.data?.data) {
+          setStats(res.data.data);
+        }
+      } catch (err) {
+        toast.error('Failed to load dashboard statistics');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDashboard();
+  }, []);
+
+  if (loading) {
+    return <Loader message="Loading admin dashboard statistics..." />;
+  }
 
   return (
     <div className="flex flex-col gap-8">
@@ -28,29 +57,29 @@ export const AdminDashboard = () => {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
         <StatCard
           label="Total Faculty"
-          value={mockFacultyList.length}
+          value={stats.faculty}
           sublabel="Instructors & Professors"
           icon={Users}
           bg="bg-[#FFDE59]"
         />
         <StatCard
           label="Enrolled Students"
-          value={mockStudentList.length}
+          value={stats.students}
           sublabel="Registered candidates"
           icon={GraduationCap}
           bg="bg-[#6BCB77]"
         />
         <StatCard
           label="Departments"
-          value={mockDepartments.length}
+          value={stats.departments}
           sublabel="Academic faculties"
           icon={Building2}
           bg="bg-[#C9B6FF]"
         />
         <StatCard
           label="Active Quizzes"
-          value={mockQuizzes.length}
-          sublabel="Across all branches"
+          value={stats.quizzes}
+          sublabel="Created across branches"
           icon={FileQuestion}
           bg="bg-[#FFA94D]"
         />

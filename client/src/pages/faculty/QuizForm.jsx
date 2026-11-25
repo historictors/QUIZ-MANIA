@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Card, Input, Select, Button, ConfirmDialog } from '../../components';
-import { mockDepartments, mockQuizzes } from '../../data/sampleData';
-import { ArrowLeft, Plus, Trash2, CheckCircle, Save, AlertCircle } from 'lucide-react';
+import { Card, Input, Select, Button, Loader } from '../../components';
+import API from '../../services/api';
+import { ArrowLeft, Plus, Trash2, Save } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export const QuizForm = () => {
@@ -10,29 +10,104 @@ export const QuizForm = () => {
   const navigate = useNavigate();
   const isEditing = Boolean(id);
 
-  const existingQuiz = isEditing ? mockQuizzes.find((q) => q._id === id) : null;
+  const [departments, setDepartments] = useState([]);
+  const [loading, setLoading] = useState(isEditing);
+  const [submitting, setSubmitting] = useState(false);
 
   const [formData, setFormData] = useState({
-    title: existingQuiz?.title || '',
-    subject: existingQuiz?.subject || '',
-    department: existingQuiz?.department || 'dept1',
-    year: existingQuiz?.year || '3',
-    timeLimit: existingQuiz?.timeLimit || '30',
-    startTime: existingQuiz ? new Date(existingQuiz.startTime).toISOString().slice(0, 16) : '',
-    endTime: existingQuiz ? new Date(existingQuiz.endTime).toISOString().slice(0, 16) : ''
+    title: '',
+    subject: '',
+    department: '',
+    year: '1',
+    timeLimit: '30',
+    startTime: '',
+    endTime: ''
   });
 
-  const [questions, setQuestions] = useState(
-    existingQuiz?.questions && existingQuiz.questions.length > 0
-      ? existingQuiz.questions
-      : [
-          {
-            questionText: '',
-            options: ['', '', '', ''],
-            correctAnswer: 0
+  const [questions, setQuestions] = useState([
+    {
+      questionText: '',
+      options: ['', '', '', ''],
+      correctAnswer: 0
+    }
+  ]);
+
+  // Convert Date to local datetime-local string
+  const toLocalISOString = (dateInput) => {
+    if (!dateInput) return '';
+    const date = new Date(dateInput);
+    if (isNaN(date.getTime())) return '';
+    const pad = (num) => num.toString().padStart(2, '0');
+    const YYYY = date.getFullYear();
+    const MM = pad(date.getMonth() + 1);
+    const DD = pad(date.getDate());
+    const hh = pad(date.getHours());
+    const mm = pad(date.getMinutes());
+    return `${YYYY}-${MM}-${DD}T${hh}:${mm}`;
+  };
+
+  // Load departments
+  useEffect(() => {
+    const fetchDepts = async () => {
+      try {
+        const res = await API.get('/departments');
+        if (res.data?.success && Array.isArray(res.data?.data)) {
+          setDepartments(res.data.data);
+          if (!isEditing && res.data.data.length > 0) {
+            setFormData((prev) => ({
+              ...prev,
+              department: res.data.data[0]._id
+            }));
           }
-        ]
-  );
+        }
+      } catch (err) {
+        toast.error('Failed to load departments');
+      }
+    };
+
+    fetchDepts();
+  }, [isEditing]);
+
+  // If in edit mode, load the existing quiz with questions & correct answers
+  useEffect(() => {
+    if (!isEditing) return;
+
+    const fetchQuiz = async () => {
+      try {
+        const res = await API.get(`/faculty/quizzes/${id}`);
+        if (res.data?.success && res.data?.data) {
+          const q = res.data.data;
+          setFormData({
+            title: q.title || '',
+            subject: q.subject || '',
+            department: q.department?._id || q.department || '',
+            year: q.year?.toString() || '1',
+            timeLimit: q.timeLimit?.toString() || '30',
+            startTime: toLocalISOString(q.startTime),
+            endTime: toLocalISOString(q.endTime)
+          });
+
+          if (Array.isArray(q.questions) && q.questions.length > 0) {
+            setQuestions(
+              q.questions.map((item) => ({
+                questionText: item.questionText || '',
+                options: item.options || ['', '', '', ''],
+                correctAnswer: typeof item.correctAnswer === 'number' ? item.correctAnswer : 0
+              }))
+            );
+          }
+        }
+      } catch (err) {
+        const msg = err.response?.data?.message || 'Failed to load quiz details';
+        toast.error(msg);
+        navigate('/faculty/quizzes');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchQuiz();
+  }, [id, isEditing]);
 
   const handleFieldChange = (e) => {
     setFormData({ ...formData, [e.target.id]: e.target.value });
@@ -75,42 +150,97 @@ export const QuizForm = () => {
     setQuestions(questions.filter((_, idx) => idx !== qIndex));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!formData.title || !formData.subject || !formData.startTime || !formData.endTime) {
-      toast.error('Please fill in all basic quiz details');
+    // Client-side validations
+    if (!formData.title || !formData.subject || !formData.department || !formData.startTime || !formData.endTime) {
+      toast.error('Please complete all required quiz fields');
       return;
     }
 
-    if (new Date(formData.endTime) <= new Date(formData.startTime)) {
-      toast.error('End time must be strictly after start time');
+    const startDate = new Date(formData.startTime);
+    const endDate = new Date(formData.endTime);
+
+    if (endDate <= startDate) {
+      toast.error('End time must be after start time');
       return;
     }
 
-    if (Number(formData.timeLimit) <= 0) {
+    const timeLimitNum = Number(formData.timeLimit);
+    if (timeLimitNum <= 0 || isNaN(timeLimitNum)) {
       toast.error('Time limit must be greater than zero');
       return;
     }
 
-    // Validate questions
+    if (!Array.isArray(questions) || questions.length === 0) {
+      toast.error('At least one question is required');
+      return;
+    }
+
     for (let i = 0; i < questions.length; i++) {
       const q = questions[i];
       if (!q.questionText.trim()) {
-        toast.error(`Question ${i + 1} text is empty`);
+        toast.error(`Question ${i + 1} text is required`);
+        return;
+      }
+      if (!Array.isArray(q.options) || q.options.length !== 4) {
+        toast.error(`Question ${i + 1} must have exactly 4 options`);
         return;
       }
       for (let j = 0; j < 4; j++) {
-        if (!q.options[j].trim()) {
-          toast.error(`Question ${i + 1}, option ${j + 1} cannot be empty`);
+        if (!q.options[j] || !q.options[j].trim()) {
+          toast.error(`Question ${i + 1}, Option ${String.fromCharCode(65 + j)} cannot be empty`);
           return;
         }
       }
+      if (q.correctAnswer === undefined || q.correctAnswer < 0 || q.correctAnswer > 3) {
+        toast.error(`Question ${i + 1} must have a valid correct answer`);
+        return;
+      }
     }
 
-    toast.success(isEditing ? 'Quiz updated successfully!' : 'Quiz published successfully!');
-    navigate('/faculty/quizzes');
+    setSubmitting(true);
+    const payload = {
+      title: formData.title.trim(),
+      subject: formData.subject.trim(),
+      department: formData.department,
+      year: Number(formData.year),
+      timeLimit: timeLimitNum,
+      startTime: startDate.toISOString(),
+      endTime: endDate.toISOString(),
+      questions: questions.map((q) => ({
+        questionText: q.questionText.trim(),
+        options: q.options.map((opt) => opt.trim()),
+        correctAnswer: q.correctAnswer
+      }))
+    };
+
+    try {
+      if (isEditing) {
+        const res = await API.put(`/faculty/quizzes/${id}`, payload);
+        if (res.data?.success) {
+          toast.success(res.data.message || 'Quiz updated successfully!');
+          navigate('/faculty/quizzes');
+        }
+      } else {
+        const res = await API.post('/faculty/quizzes', payload);
+        if (res.data?.success) {
+          toast.success(res.data.message || 'Quiz created successfully!');
+          navigate('/faculty/quizzes');
+        }
+      }
+    } catch (err) {
+      const msg = err.response?.data?.message || 'Failed to save quiz';
+      toast.error(msg);
+    } finally {
+      setSubmitting(false);
+    }
   };
+
+  if (loading) {
+    return <Loader message="Loading quiz details for editing..." />;
+  }
 
   return (
     <div className="max-w-4xl mx-auto flex flex-col gap-6">
@@ -165,7 +295,7 @@ export const QuizForm = () => {
               value={formData.department}
               onChange={handleFieldChange}
             >
-              {mockDepartments.map((d) => (
+              {departments.map((d) => (
                 <option key={d._id} value={d._id}>
                   {d.code} - {d.name}
                 </option>
@@ -224,7 +354,7 @@ export const QuizForm = () => {
                 2. QUESTION BUILDER ({questions.length})
               </h2>
               <p className="font-body text-xs text-neutral-600">
-                Provide exactly 4 options per question and select the radio button for the correct option
+                Provide exactly 4 options per question and click the radio button to select the correct answer
               </p>
             </div>
             <Button
@@ -338,10 +468,11 @@ export const QuizForm = () => {
             type="submit"
             variant="primary"
             size="lg"
+            disabled={submitting}
             className="px-8"
           >
             <Save size={18} />
-            <span>{isEditing ? 'SAVE QUIZ CHANGES' : 'PUBLISH QUIZ'}</span>
+            <span>{submitting ? 'SAVING...' : isEditing ? 'SAVE CHANGES' : 'PUBLISH QUIZ'}</span>
           </Button>
         </div>
       </form>

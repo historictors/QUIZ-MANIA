@@ -7,6 +7,9 @@ import StudentLayout from './layouts/StudentLayout';
 import FacultyLayout from './layouts/FacultyLayout';
 import AdminLayout from './layouts/AdminLayout';
 
+// ProtectedRoute
+import ProtectedRoute from './components/ProtectedRoute';
+
 // Auth Pages
 import Login from './pages/auth/Login';
 import Register from './pages/auth/Register';
@@ -61,32 +64,37 @@ export const App = () => {
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
 
-        {/* Student Routes */}
-        <Route path="/student" element={<StudentLayout />}>
-          <Route index element={<StudentDashboard />} />
-          <Route path="quiz/:id" element={<QuizInstructions />} />
-          <Route path="result/:id" element={<QuizResult />} />
-          <Route path="results" element={<MyResults />} />
+        {/* Protected Student Routes */}
+        <Route element={<ProtectedRoute allowedRoles={['student']} />}>
+          <Route path="/student" element={<StudentLayout />}>
+            <Route index element={<StudentDashboard />} />
+            <Route path="quiz/:id" element={<QuizInstructions />} />
+            <Route path="result/:id" element={<QuizResult />} />
+            <Route path="results" element={<MyResults />} />
+          </Route>
+          {/* Quiz Taking / Attempt Route (Has NO Sidebar) */}
+          <Route path="/student/quiz/:id/attempt" element={<QuizAttempt />} />
         </Route>
 
-        {/* Quiz Taking / Attempt Route (Has NO Sidebar per requirements) */}
-        <Route path="/student/quiz/:id/attempt" element={<QuizAttempt />} />
-
-        {/* Faculty Routes */}
-        <Route path="/faculty" element={<FacultyLayout />}>
-          <Route index element={<FacultyDashboard />} />
-          <Route path="quizzes" element={<MyQuizzes />} />
-          <Route path="quizzes/new" element={<QuizForm />} />
-          <Route path="quizzes/:id/edit" element={<QuizForm />} />
-          <Route path="quizzes/:id/results" element={<QuizResults />} />
+        {/* Protected Faculty Routes */}
+        <Route element={<ProtectedRoute allowedRoles={['faculty']} />}>
+          <Route path="/faculty" element={<FacultyLayout />}>
+            <Route index element={<FacultyDashboard />} />
+            <Route path="quizzes" element={<MyQuizzes />} />
+            <Route path="quizzes/new" element={<QuizForm />} />
+            <Route path="quizzes/:id/edit" element={<QuizForm />} />
+            <Route path="quizzes/:id/results" element={<QuizResults />} />
+          </Route>
         </Route>
 
-        {/* Admin Routes */}
-        <Route path="/admin" element={<AdminLayout />}>
-          <Route index element={<AdminDashboard />} />
-          <Route path="faculty" element={<Faculty />} />
-          <Route path="departments" element={<Departments />} />
-          <Route path="students" element={<Students />} />
+        {/* Protected Admin Routes */}
+        <Route element={<ProtectedRoute allowedRoles={['admin']} />}>
+          <Route path="/admin" element={<AdminLayout />}>
+            <Route index element={<AdminDashboard />} />
+            <Route path="faculty" element={<Faculty />} />
+            <Route path="departments" element={<Departments />} />
+            <Route path="students" element={<Students />} />
+          </Route>
         </Route>
 
         {/* Fallback 404 */}

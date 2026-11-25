@@ -1,35 +1,77 @@
-import React, { useState } from 'react';
-import { Table, Button, Input, Select, Modal, ConfirmDialog, EmptyState } from '../../components';
-import { mockFacultyList, mockDepartments } from '../../data/sampleData';
-import { PlusCircle, Search, Edit3, Trash2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Table, Button, Input, Select, Modal, ConfirmDialog, EmptyState, Loader } from '../../components';
+import API from '../../services/api';
+import { PlusCircle, Edit3, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export const Faculty = () => {
-  const [faculty, setFaculty] = useState(mockFacultyList);
+  const [faculty, setFaculty] = useState([]);
+  const [departments, setDepartments] = useState([]);
   const [search, setSearch] = useState('');
   const [departmentFilter, setDepartmentFilter] = useState('');
+  const [loading, setLoading] = useState(true);
+
   const [modalOpen, setModalOpen] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
   const [editingId, setEditingId] = useState(null);
+  const [formSubmitting, setFormSubmitting] = useState(false);
 
   const [form, setForm] = useState({
     name: '',
     email: '',
     password: '',
-    department: 'dept1'
+    department: ''
   });
 
-  const filteredFaculty = faculty.filter((f) => {
-    const matchesSearch =
-      f.name.toLowerCase().includes(search.toLowerCase()) ||
-      f.email.toLowerCase().includes(search.toLowerCase());
-    const matchesDept = departmentFilter ? f.department._id === departmentFilter : true;
-    return matchesSearch && matchesDept;
-  });
+  // Fetch faculty and departments from API
+  const fetchFaculty = async () => {
+    try {
+      const params = {};
+      if (search) params.search = search;
+      if (departmentFilter) params.department = departmentFilter;
+
+      const res = await API.get('/admin/faculty', { params });
+      if (res.data?.success) {
+        setFaculty(res.data.data);
+      }
+    } catch (err) {
+      toast.error('Failed to load faculty list');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchDepartments = async () => {
+    try {
+      const res = await API.get('/departments');
+      if (res.data?.success) {
+        setDepartments(res.data.data);
+      }
+    } catch (err) {
+      console.error('Failed to load departments');
+    }
+  };
+
+  useEffect(() => {
+    fetchDepartments();
+  }, []);
+
+  useEffect(() => {
+    const delayDebounce = setTimeout(() => {
+      fetchFaculty();
+    }, 300);
+
+    return () => clearTimeout(delayDebounce);
+  }, [search, departmentFilter]);
 
   const handleOpenAdd = () => {
     setEditingId(null);
-    setForm({ name: '', email: '', password: '', department: 'dept1' });
+    setForm({
+      name: '',
+      email: '',
+      password: '',
+      department: departments[0]?._id || ''
+    });
     setModalOpen(true);
   };
 
@@ -39,54 +81,76 @@ export const Faculty = () => {
       name: f.name,
       email: f.email,
       password: '',
-      department: f.department._id
+      department: f.department?._id || f.department || ''
     });
     setModalOpen(true);
   };
 
-  const handleSave = (e) => {
+  const handleSave = async (e) => {
     e.preventDefault();
-    if (!form.name || !form.email || (!editingId && !form.password)) {
-      toast.error('Please complete required fields');
+    if (!form.name || !form.email || !form.department) {
+      toast.error('Please complete all required fields');
       return;
     }
 
-    const deptObj = mockDepartments.find((d) => d._id === form.department) || mockDepartments[0];
-
-    if (editingId) {
-      setFaculty(
-        faculty.map((f) =>
-          f._id === editingId
-            ? { ...f, name: form.name, email: form.email, department: deptObj }
-            : f
-        )
-      );
-      toast.success('Faculty updated successfully');
-    } else {
-      const newFaculty = {
-        _id: `fac_${Date.now()}`,
-        name: form.name,
-        email: form.email,
-        department: deptObj
-      };
-      setFaculty([newFaculty, ...faculty]);
-      toast.success('Faculty created successfully');
+    if (!editingId && (!form.password || form.password.length < 6)) {
+      toast.error('Password must be at least 6 characters');
+      return;
     }
 
-    setModalOpen(false);
+    setFormSubmitting(true);
+    try {
+      if (editingId) {
+        const payload = {
+          name: form.name.trim(),
+          email: form.email.trim(),
+          department: form.department
+        };
+        if (form.password && form.password.trim()) {
+          payload.password = form.password;
+        }
+
+        const res = await API.put(`/admin/faculty/${editingId}`, payload);
+        if (res.data?.success) {
+          toast.success(res.data.message || 'Faculty updated successfully');
+          setModalOpen(false);
+          fetchFaculty();
+        }
+      } else {
+        const res = await API.post('/admin/faculty', {
+          name: form.name.trim(),
+          email: form.email.trim(),
+          password: form.password,
+          department: form.department
+        });
+        if (res.data?.success) {
+          toast.success(res.data.message || 'Faculty created successfully');
+          setModalOpen(false);
+          fetchFaculty();
+        }
+      }
+    } catch (err) {
+      const msg = err.response?.data?.message || 'Operation failed';
+      toast.error(msg);
+    } finally {
+      setFormSubmitting(false);
+    }
   };
 
-  const handleDelete = () => {
-    // If faculty has created quizzes, block deletion
-    if (deleteId === 'fac1') {
-      toast.error('Cannot delete: this faculty has created quizzes');
+  const handleDelete = async () => {
+    if (!deleteId) return;
+    try {
+      const res = await API.delete(`/admin/faculty/${deleteId}`);
+      if (res.data?.success) {
+        toast.success(res.data.message || 'Faculty deleted successfully');
+        fetchFaculty();
+      }
+    } catch (err) {
+      const msg = err.response?.data?.message || 'Failed to delete faculty member';
+      toast.error(msg);
+    } finally {
       setDeleteId(null);
-      return;
     }
-
-    setFaculty(faculty.filter((f) => f._id !== deleteId));
-    toast.success('Faculty deleted successfully');
-    setDeleteId(null);
   };
 
   return (
@@ -124,7 +188,7 @@ export const Faculty = () => {
             onChange={(e) => setDepartmentFilter(e.target.value)}
           >
             <option value="">All Departments</option>
-            {mockDepartments.map((d) => (
+            {departments.map((d) => (
               <option key={d._id} value={d._id}>
                 {d.code} - {d.name}
               </option>
@@ -133,8 +197,9 @@ export const Faculty = () => {
         </div>
       </div>
 
-      {/* Faculty Table */}
-      {filteredFaculty.length === 0 ? (
+      {loading ? (
+        <Loader message="Loading faculty roster..." />
+      ) : faculty.length === 0 ? (
         <EmptyState
           title="No faculty members found"
           description="Try adjusting your search query or department filter."
@@ -143,7 +208,7 @@ export const Faculty = () => {
         />
       ) : (
         <Table headers={['Name', 'Email Address', 'Department', 'Actions']}>
-          {filteredFaculty.map((f) => (
+          {faculty.map((f) => (
             <tr key={f._id} className="hover:bg-[#FFF8E7] transition-colors">
               <td className="p-3.5 font-bold font-headline text-black whitespace-nowrap">
                 {f.name}
@@ -153,7 +218,7 @@ export const Faculty = () => {
               </td>
               <td className="p-3.5 whitespace-nowrap">
                 <span className="font-label text-xs font-bold bg-[#FFE885] px-2 py-0.5 border border-black rounded">
-                  {f.department.code} - {f.department.name}
+                  {f.department ? `${f.department.code} - ${f.department.name}` : 'Unassigned'}
                 </span>
               </td>
               <td className="p-3.5 whitespace-nowrap flex items-center gap-2">
@@ -202,7 +267,7 @@ export const Faculty = () => {
             value={form.department}
             onChange={(e) => setForm({ ...form, department: e.target.value })}
           >
-            {mockDepartments.map((d) => (
+            {departments.map((d) => (
               <option key={d._id} value={d._id}>
                 {d.code} - {d.name}
               </option>
@@ -211,9 +276,9 @@ export const Faculty = () => {
           <Input
             id="fac-password"
             type="password"
-            label={editingId ? 'New Password (leave blank to keep current)' : 'Password'}
+            label={editingId ? 'New Password (optional on update)' : 'Password'}
             required={!editingId}
-            placeholder="••••••••"
+            placeholder={editingId ? 'Leave blank to keep unchanged' : '••••••••'}
             value={form.password}
             onChange={(e) => setForm({ ...form, password: e.target.value })}
           />
@@ -222,8 +287,8 @@ export const Faculty = () => {
             <Button variant="secondary" onClick={() => setModalOpen(false)}>
               CANCEL
             </Button>
-            <Button type="submit" variant="primary">
-              {editingId ? 'SAVE CHANGES' : 'CREATE ACCOUNT'}
+            <Button type="submit" variant="primary" disabled={formSubmitting}>
+              {formSubmitting ? 'SAVING...' : editingId ? 'SAVE CHANGES' : 'CREATE ACCOUNT'}
             </Button>
           </div>
         </form>
@@ -235,7 +300,7 @@ export const Faculty = () => {
         onClose={() => setDeleteId(null)}
         onConfirm={handleDelete}
         title="DELETE FACULTY ACCOUNT?"
-        message="Are you sure you want to delete this faculty account? Action will be blocked if quizzes have been authored by this faculty."
+        message="Are you sure you want to delete this faculty account? Action will be blocked if this faculty has authored any quizzes."
         confirmText="DELETE"
         cancelText="CANCEL"
         variant="danger"

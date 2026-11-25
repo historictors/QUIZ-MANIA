@@ -1,21 +1,54 @@
-import React, { useState } from 'react';
-import { Table, Input, Select, EmptyState } from '../../components';
-import { mockStudentList, mockDepartments } from '../../data/sampleData';
-import { GraduationCap } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Table, Input, Select, EmptyState, Loader } from '../../components';
+import API from '../../services/api';
+import toast from 'react-hot-toast';
 
 export const Students = () => {
-  const [students] = useState(mockStudentList);
+  const [students, setStudents] = useState([]);
+  const [departments, setDepartments] = useState([]);
   const [search, setSearch] = useState('');
   const [departmentFilter, setDepartmentFilter] = useState('');
+  const [loading, setLoading] = useState(true);
 
-  const filteredStudents = students.filter((s) => {
-    const matchesSearch =
-      s.name.toLowerCase().includes(search.toLowerCase()) ||
-      s.email.toLowerCase().includes(search.toLowerCase()) ||
-      s.rollNumber.toLowerCase().includes(search.toLowerCase());
-    const matchesDept = departmentFilter ? s.department._id === departmentFilter : true;
-    return matchesSearch && matchesDept;
-  });
+  const fetchDepartments = async () => {
+    try {
+      const res = await API.get('/departments');
+      if (res.data?.success) {
+        setDepartments(res.data.data);
+      }
+    } catch (err) {
+      console.error('Failed to load departments');
+    }
+  };
+
+  const fetchStudents = async () => {
+    try {
+      const params = {};
+      if (search) params.search = search;
+      if (departmentFilter) params.department = departmentFilter;
+
+      const res = await API.get('/admin/students', { params });
+      if (res.data?.success) {
+        setStudents(res.data.data);
+      }
+    } catch (err) {
+      toast.error('Failed to load students');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchDepartments();
+  }, []);
+
+  useEffect(() => {
+    const delayDebounce = setTimeout(() => {
+      fetchStudents();
+    }, 300);
+
+    return () => clearTimeout(delayDebounce);
+  }, [search, departmentFilter]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -48,7 +81,7 @@ export const Students = () => {
             onChange={(e) => setDepartmentFilter(e.target.value)}
           >
             <option value="">All Departments</option>
-            {mockDepartments.map((d) => (
+            {departments.map((d) => (
               <option key={d._id} value={d._id}>
                 {d.code} - {d.name}
               </option>
@@ -57,22 +90,23 @@ export const Students = () => {
         </div>
       </div>
 
-      {/* Students Table */}
-      {filteredStudents.length === 0 ? (
+      {loading ? (
+        <Loader message="Loading student roster..." />
+      ) : students.length === 0 ? (
         <EmptyState
           title="No students found"
           description="No candidate records match your current filter settings."
         />
       ) : (
         <Table headers={['Student Name', 'Roll Number', 'College Email', 'Department', 'Year']}>
-          {filteredStudents.map((s) => (
+          {students.map((s) => (
             <tr key={s._id} className="hover:bg-[#FFF8E7] transition-colors">
               <td className="p-3.5 font-bold font-headline text-black whitespace-nowrap">
                 {s.name}
               </td>
               <td className="p-3.5 font-mono font-bold text-xs whitespace-nowrap">
                 <span className="bg-[#FFF8E7] px-2 py-0.5 border border-black rounded">
-                  {s.rollNumber}
+                  {s.rollNumber || 'N/A'}
                 </span>
               </td>
               <td className="p-3.5 font-mono text-xs whitespace-nowrap">
@@ -80,11 +114,11 @@ export const Students = () => {
               </td>
               <td className="p-3.5 whitespace-nowrap">
                 <span className="font-label text-xs font-bold bg-[#DCEBFF] px-2 py-0.5 border border-black rounded">
-                  {s.department.code}
+                  {s.department ? s.department.code : 'N/A'}
                 </span>
               </td>
               <td className="p-3.5 font-mono text-xs whitespace-nowrap">
-                Year {s.year}
+                Year {s.year || '1'}
               </td>
             </tr>
           ))}

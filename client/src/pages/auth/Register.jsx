@@ -1,35 +1,88 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Card, Input, Select, Button } from '../../components';
-import { mockDepartments } from '../../data/sampleData';
-import { Sparkles, ArrowRight } from 'lucide-react';
+import API from '../../services/api';
+import { Sparkles, ArrowRight, AlertCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export const Register = () => {
+  const [departments, setDepartments] = useState([]);
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     password: '',
     rollNumber: '',
-    department: 'dept1',
-    year: '3'
+    department: '',
+    year: '1'
   });
+  const [errorMessage, setErrorMessage] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const navigate = useNavigate();
+
+  // Load departments from GET /api/departments
+  useEffect(() => {
+    const fetchDepartments = async () => {
+      try {
+        const res = await API.get('/departments');
+        if (res.data?.success && Array.isArray(res.data?.data)) {
+          setDepartments(res.data.data);
+          if (res.data.data.length > 0) {
+            setFormData((prev) => ({
+              ...prev,
+              department: res.data.data[0]._id
+            }));
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load departments:', err);
+        toast.error('Failed to load departments from server');
+      }
+    };
+
+    fetchDepartments();
+  }, []);
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.id]: e.target.value });
   };
 
-  const handleRegister = (e) => {
+  const handleRegister = async (e) => {
     e.preventDefault();
-    if (!formData.name || !formData.email || !formData.password || !formData.rollNumber) {
-      toast.error('Please fill all required fields');
+    setErrorMessage('');
+
+    if (!formData.name || !formData.email || !formData.password || !formData.rollNumber || !formData.department) {
+      setErrorMessage('Please fill all required fields.');
       return;
     }
 
-    toast.success('Registration successful! Please sign in.');
-    navigate('/login');
+    if (formData.password.length < 6) {
+      setErrorMessage('Password must be at least 6 characters.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await API.post('/auth/student/register', {
+        name: formData.name.trim(),
+        email: formData.email.trim(),
+        password: formData.password,
+        rollNumber: formData.rollNumber.trim(),
+        department: formData.department,
+        year: Number(formData.year)
+      });
+
+      if (res.data?.success) {
+        toast.success('Registration successful! Please sign in with your credentials.');
+        navigate('/login');
+      }
+    } catch (err) {
+      const msg = err.response?.data?.message || 'Registration failed. Please check your details.';
+      setErrorMessage(msg);
+      toast.error(msg);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -58,6 +111,16 @@ export const Register = () => {
               Only verified students can register for college assessments
             </p>
           </div>
+
+          {/* Validation error box */}
+          {errorMessage && (
+            <div className="bg-[#FFD6D6] border-2 border-[#FF6B6B] p-3 rounded flex items-start gap-2.5 shadow-[2px_2px_0_#000000]">
+              <AlertCircle size={18} className="text-[#FF6B6B] shrink-0 mt-0.5" />
+              <p className="font-body text-xs text-black font-semibold">
+                {errorMessage}
+              </p>
+            </div>
+          )}
 
           <form onSubmit={handleRegister} className="flex flex-col gap-4">
             <Input
@@ -97,11 +160,15 @@ export const Register = () => {
                 value={formData.department}
                 onChange={handleChange}
               >
-                {mockDepartments.map((d) => (
-                  <option key={d._id} value={d._id}>
-                    {d.code} - {d.name}
-                  </option>
-                ))}
+                {departments.length === 0 ? (
+                  <option value="">Loading departments...</option>
+                ) : (
+                  departments.map((d) => (
+                    <option key={d._id} value={d._id}>
+                      {d.code} - {d.name}
+                    </option>
+                  ))
+                )}
               </Select>
 
               <Select
@@ -133,8 +200,9 @@ export const Register = () => {
               variant="success"
               size="lg"
               className="w-full mt-2"
+              disabled={loading}
             >
-              <span>COMPLETE REGISTRATION</span>
+              <span>{loading ? 'CREATING ACCOUNT...' : 'COMPLETE REGISTRATION'}</span>
               <ArrowRight size={18} />
             </Button>
           </form>

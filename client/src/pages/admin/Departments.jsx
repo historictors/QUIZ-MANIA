@@ -1,19 +1,38 @@
-import React, { useState } from 'react';
-import { Table, Button, Input, Modal, ConfirmDialog, EmptyState } from '../../components';
-import { mockDepartments } from '../../data/sampleData';
+import React, { useState, useEffect } from 'react';
+import { Table, Button, Input, Modal, ConfirmDialog, EmptyState, Loader } from '../../components';
+import API from '../../services/api';
 import { PlusCircle, Edit3, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export const Departments = () => {
-  const [departments, setDepartments] = useState(mockDepartments);
+  const [departments, setDepartments] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [deleteId, setDeleteId] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const [form, setForm] = useState({
     name: '',
     code: ''
   });
+
+  const fetchDepartments = async () => {
+    try {
+      const res = await API.get('/admin/departments');
+      if (res.data?.success) {
+        setDepartments(res.data.data);
+      }
+    } catch (err) {
+      toast.error('Failed to load departments');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchDepartments();
+  }, []);
 
   const handleOpenAdd = () => {
     setEditingId(null);
@@ -27,44 +46,58 @@ export const Departments = () => {
     setModalOpen(true);
   };
 
-  const handleSave = (e) => {
+  const handleSave = async (e) => {
     e.preventDefault();
     if (!form.name || !form.code) {
       toast.error('Department name and code are required');
       return;
     }
 
-    if (editingId) {
-      setDepartments(
-        departments.map((d) =>
-          d._id === editingId ? { ...d, name: form.name, code: form.code.toUpperCase() } : d
-        )
-      );
-      toast.success('Department updated successfully');
-    } else {
-      const newDept = {
-        _id: `dept_${Date.now()}`,
-        name: form.name,
-        code: form.code.toUpperCase()
-      };
-      setDepartments([...departments, newDept]);
-      toast.success('Department created successfully');
+    setSubmitting(true);
+    try {
+      if (editingId) {
+        const res = await API.put(`/admin/departments/${editingId}`, {
+          name: form.name.trim(),
+          code: form.code.trim().toUpperCase()
+        });
+        if (res.data?.success) {
+          toast.success(res.data.message || 'Department updated successfully');
+          setModalOpen(false);
+          fetchDepartments();
+        }
+      } else {
+        const res = await API.post('/admin/departments', {
+          name: form.name.trim(),
+          code: form.code.trim().toUpperCase()
+        });
+        if (res.data?.success) {
+          toast.success(res.data.message || 'Department created successfully');
+          setModalOpen(false);
+          fetchDepartments();
+        }
+      }
+    } catch (err) {
+      const msg = err.response?.data?.message || 'Operation failed';
+      toast.error(msg);
+    } finally {
+      setSubmitting(false);
     }
-
-    setModalOpen(false);
   };
 
-  const handleDelete = () => {
-    // If department in use, block deletion
-    if (deleteId === 'dept1' || deleteId === 'dept2') {
-      toast.error('Cannot delete: department is in use');
+  const handleDelete = async () => {
+    if (!deleteId) return;
+    try {
+      const res = await API.delete(`/admin/departments/${deleteId}`);
+      if (res.data?.success) {
+        toast.success(res.data.message || 'Department deleted successfully');
+        fetchDepartments();
+      }
+    } catch (err) {
+      const msg = err.response?.data?.message || 'Failed to delete department';
+      toast.error(msg);
+    } finally {
       setDeleteId(null);
-      return;
     }
-
-    setDepartments(departments.filter((d) => d._id !== deleteId));
-    toast.success('Department deleted successfully');
-    setDeleteId(null);
   };
 
   return (
@@ -85,31 +118,41 @@ export const Departments = () => {
         </Button>
       </div>
 
-      {/* Department Table */}
-      <Table headers={['Department Code', 'Department Name', 'Actions']}>
-        {departments.map((dept) => (
-          <tr key={dept._id} className="hover:bg-[#FFF8E7] transition-colors">
-            <td className="p-3.5 font-mono font-bold text-black whitespace-nowrap">
-              <span className="bg-[#FFDE59] px-2.5 py-1 border border-black rounded text-xs">
-                {dept.code}
-              </span>
-            </td>
-            <td className="p-3.5 font-headline font-bold text-black whitespace-nowrap">
-              {dept.name}
-            </td>
-            <td className="p-3.5 whitespace-nowrap flex items-center gap-2">
-              <Button variant="secondary" size="sm" onClick={() => handleOpenEdit(dept)}>
-                <Edit3 size={14} />
-                <span>EDIT</span>
-              </Button>
-              <Button variant="danger" size="sm" onClick={() => setDeleteId(dept._id)}>
-                <Trash2 size={14} />
-                <span>DELETE</span>
-              </Button>
-            </td>
-          </tr>
-        ))}
-      </Table>
+      {loading ? (
+        <Loader message="Loading departments..." />
+      ) : departments.length === 0 ? (
+        <EmptyState
+          title="No departments found"
+          description="Create your first academic department."
+          actionLabel="ADD DEPARTMENT"
+          onAction={handleOpenAdd}
+        />
+      ) : (
+        <Table headers={['Department Code', 'Department Name', 'Actions']}>
+          {departments.map((dept) => (
+            <tr key={dept._id} className="hover:bg-[#FFF8E7] transition-colors">
+              <td className="p-3.5 font-mono font-bold text-black whitespace-nowrap">
+                <span className="bg-[#FFDE59] px-2.5 py-1 border border-black rounded text-xs">
+                  {dept.code}
+                </span>
+              </td>
+              <td className="p-3.5 font-headline font-bold text-black whitespace-nowrap">
+                {dept.name}
+              </td>
+              <td className="p-3.5 whitespace-nowrap flex items-center gap-2">
+                <Button variant="secondary" size="sm" onClick={() => handleOpenEdit(dept)}>
+                  <Edit3 size={14} />
+                  <span>EDIT</span>
+                </Button>
+                <Button variant="danger" size="sm" onClick={() => setDeleteId(dept._id)}>
+                  <Trash2 size={14} />
+                  <span>DELETE</span>
+                </Button>
+              </td>
+            </tr>
+          ))}
+        </Table>
+      )}
 
       {/* Add / Edit Modal */}
       <Modal
@@ -139,8 +182,8 @@ export const Departments = () => {
             <Button variant="secondary" onClick={() => setModalOpen(false)}>
               CANCEL
             </Button>
-            <Button type="submit" variant="primary">
-              {editingId ? 'SAVE CHANGES' : 'CREATE DEPARTMENT'}
+            <Button type="submit" variant="primary" disabled={submitting}>
+              {submitting ? 'SAVING...' : editingId ? 'SAVE CHANGES' : 'CREATE DEPARTMENT'}
             </Button>
           </div>
         </form>
@@ -152,7 +195,7 @@ export const Departments = () => {
         onClose={() => setDeleteId(null)}
         onConfirm={handleDelete}
         title="DELETE DEPARTMENT?"
-        message="Are you sure you want to delete this department? If any faculty, students, or quizzes reference this branch, deletion will be blocked."
+        message="Are you sure you want to delete this department? If any users or quizzes reference this department, deletion will be blocked."
         confirmText="DELETE"
         cancelText="CANCEL"
         variant="danger"

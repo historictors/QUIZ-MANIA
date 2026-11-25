@@ -1,20 +1,61 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Card, Button, Badge } from '../../components';
-import { mockQuizzes } from '../../data/sampleData';
-import { AlertCircle, Clock, FileText, ArrowLeft, Play, ShieldAlert } from 'lucide-react';
+import { Card, Button, Badge, Loader } from '../../components';
+import API from '../../services/api';
+import { AlertCircle, Clock, ArrowLeft, Play, ShieldAlert } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export const QuizInstructions = () => {
   const { id } = useParams();
   const navigate = useNavigate();
 
-  const quiz = mockQuizzes.find((q) => q._id === id) || mockQuizzes[0];
+  const [quiz, setQuiz] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [starting, setStarting] = useState(false);
 
-  const handleStart = () => {
-    toast.success('Quiz started! Countdown initiated.');
-    navigate(`/student/quiz/${quiz._id}/attempt`);
+  useEffect(() => {
+    const fetchInstructions = async () => {
+      try {
+        const res = await API.get(`/student/quizzes/${id}`);
+        if (res.data?.success && res.data?.data) {
+          setQuiz(res.data.data);
+        }
+      } catch (err) {
+        const msg = err.response?.data?.message || 'Quiz not found or not eligible';
+        toast.error(msg);
+        navigate('/student');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchInstructions();
+  }, [id]);
+
+  const handleStart = async () => {
+    setStarting(true);
+    try {
+      const res = await API.post(`/student/quizzes/${id}/start`);
+      if (res.data?.success) {
+        toast.success(res.data.message || 'Quiz started! Countdown initiated.');
+        navigate(`/student/quiz/${id}/attempt`, {
+          state: { initialAttempt: res.data.data }
+        });
+      }
+    } catch (err) {
+      const msg = err.response?.data?.message || 'Unable to start quiz';
+      toast.error(msg);
+      navigate('/student');
+    } finally {
+      setStarting(false);
+    }
   };
+
+  if (loading) {
+    return <Loader message="Loading quiz instructions..." />;
+  }
+
+  if (!quiz) return null;
 
   return (
     <div className="max-w-3xl mx-auto flex flex-col gap-6">
@@ -36,7 +77,7 @@ export const QuizInstructions = () => {
               {quiz.title}
             </h1>
             <p className="font-body text-sm text-neutral-600 font-medium">
-              Subject: {quiz.subject} | CSE Department (3rd Year)
+              Subject: {quiz.subject} | {quiz.department?.code} (Year {quiz.year})
             </p>
           </div>
 
@@ -55,15 +96,15 @@ export const QuizInstructions = () => {
             <span className="font-mono text-xl font-bold text-black">{quiz.numberOfQuestions}</span>
           </div>
           <div className="bg-[#FFF8E7] border-2 border-black p-3 rounded text-center">
-            <span className="font-label text-xs uppercase font-bold text-neutral-600 block">Marks</span>
+            <span className="font-label text-xs uppercase font-bold text-neutral-600 block">Total Marks</span>
             <span className="font-mono text-xl font-bold text-black">{quiz.numberOfQuestions}</span>
           </div>
           <div className="bg-[#FFF8E7] border-2 border-black p-3 rounded text-center">
-            <span className="font-label text-xs uppercase font-bold text-neutral-600 block">Negative</span>
+            <span className="font-label text-xs uppercase font-bold text-neutral-600 block">Negative Marking</span>
             <span className="font-mono text-xl font-bold text-black">NONE</span>
           </div>
           <div className="bg-[#FFF8E7] border-2 border-black p-3 rounded text-center">
-            <span className="font-label text-xs uppercase font-bold text-neutral-600 block">Attempts</span>
+            <span className="font-label text-xs uppercase font-bold text-neutral-600 block">Allowed Attempts</span>
             <span className="font-mono text-xl font-bold text-black">1 ONLY</span>
           </div>
         </div>
@@ -107,10 +148,11 @@ export const QuizInstructions = () => {
             variant="success"
             size="lg"
             onClick={handleStart}
+            disabled={starting || quiz.status !== 'live'}
             className="w-full text-base py-3.5"
           >
             <Play size={20} />
-            <span>START QUIZ NOW</span>
+            <span>{starting ? 'STARTING QUIZ...' : 'START QUIZ NOW'}</span>
           </Button>
         </div>
       </Card>

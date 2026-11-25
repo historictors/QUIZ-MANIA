@@ -2,11 +2,11 @@ import React, { useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import Topbar from './Topbar';
 import { LayoutDashboard, UserCheck, Building2, GraduationCap, X } from 'lucide-react';
-import { useApp } from '../context/AppContext';
+import { useAuth } from '../context/AuthContext';
 
 export const AdminLayout = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const { user } = useApp();
+  const { user } = useAuth();
 
   const navLinks = [
     { label: 'Dashboard', path: '/admin', icon: LayoutDashboard },
@@ -28,7 +28,7 @@ export const AdminLayout = () => {
           />
         )}
 
-        {/* Sidebar (Admin Blue background) */}
+        {/* Sidebar */}
         <aside
           className={`fixed lg:static top-0 bottom-0 left-0 z-50 w-64 bg-[#4D96FF] border-r-[3px] border-black p-5 flex flex-col justify-between transition-transform duration-200 ease-in-out lg:translate-x-0 ${
             isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
@@ -76,8 +76,8 @@ export const AdminLayout = () => {
             <span className="font-label text-[11px] uppercase font-bold text-neutral-600">
               Administrator
             </span>
-            <span className="font-body text-sm font-bold text-black">
-              {user?.name || 'Dr. Nair'}
+            <span className="font-body text-sm font-bold text-black truncate">
+              {user?.name || 'Administrator'}
             </span>
           </div>
         </aside>

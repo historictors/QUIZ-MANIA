@@ -1,96 +1,224 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { Card, Button, Modal, ConfirmDialog } from '../../components';
-import { mockQuizzes } from '../../data/sampleData';
-import { Clock, AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2 } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { Card, Button, ConfirmDialog, Loader } from '../../components';
+import API from '../../services/api';
+import { Clock, ArrowLeft, ArrowRight, CheckCircle2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export const QuizAttempt = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
 
-  const quiz = mockQuizzes.find((q) => q._id === id) || mockQuizzes[0];
-  const questions = quiz.questions || [];
-
+  const [loading, setLoading] = useState(true);
+  const [questions, setQuestions] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [selectedAnswers, setSelectedAnswers] = useState({}); // { questionIndex: optionIndex }
-  const [secondsRemaining, setSecondsRemaining] = useState(15 * 60); // 15 minutes mock
+  const [selectedAnswers, setSelectedAnswers] = useState({}); // { [questionIndex]: optionIndex }
+  const [deadline, setDeadline] = useState(null);
+  const [secondsRemaining, setSecondsRemaining] = useState(null);
   const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
-  // Countdown timer
+  // References for clock offset and autosave debounce
+  const clockOffsetRef = useRef(0);
+  const saveTimeoutRef = useRef(null);
+  const isAutoSubmittingRef = useRef(false);
+
+  // Initial load: Attempt resume via GET /api/student/quizzes/:id/attempt
+  // If not found, fallback to POST /api/student/quizzes/:id/start
   useEffect(() => {
-    const timer = setInterval(() => {
-      setSecondsRemaining((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          handleFinalSubmit(true);
-          return 0;
+    const initAttempt = async () => {
+      try {
+        let attemptData = location.state?.initialAttempt;
+
+        if (!attemptData) {
+          try {
+            const resumeRes = await API.get(`/student/quizzes/${id}/attempt`);
+            if (resumeRes.data?.success && resumeRes.data?.data) {
+              attemptData = resumeRes.data.data;
+            }
+          } catch (resumeErr) {
+            // Attempt start
+            const startRes = await API.post(`/student/quizzes/${id}/start`);
+            if (startRes.data?.success && startRes.data?.data) {
+              attemptData = startRes.data.data;
+            }
+          }
         }
-        return prev - 1;
+
+        if (!attemptData) {
+          throw new Error('Could not initialize attempt');
+        }
+
+        // Set questions
+        setQuestions(attemptData.questions || []);
+
+        // Restore saved answers
+        const ansMap = {};
+        if (Array.isArray(attemptData.savedAnswers)) {
+          attemptData.savedAnswers.forEach((ans) => {
+            if (ans.selectedAnswer !== null && ans.selectedAnswer !== undefined) {
+              ansMap[ans.questionIndex] = ans.selectedAnswer;
+            }
+          });
+        }
+        setSelectedAnswers(ansMap);
+
+        // Calculate clock offset once on load: offset = serverTime - Date.now()
+        const serverTime = new Date(attemptData.serverTime || Date.now()).getTime();
+        const clientNow = Date.now();
+        const offset = serverTime - clientNow;
+        clockOffsetRef.current = offset;
+
+        // Set deadline
+        const dl = new Date(attemptData.deadline).getTime();
+        setDeadline(dl);
+
+        // Calculate initial remaining seconds
+        const currentServerTime = Date.now() + offset;
+        const remaining = Math.max(0, Math.floor((dl - currentServerTime) / 1000));
+        setSecondsRemaining(remaining);
+      } catch (err) {
+        const msg = err.response?.data?.message || 'Failed to start quiz attempt';
+        toast.error(msg);
+        navigate('/student');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    initAttempt();
+  }, [id]);
+
+  // Submission handler (manual or auto)
+  const submitQuizAnswers = useCallback(async (isAuto = false) => {
+    if (submitting || isAutoSubmittingRef.current) return;
+    if (isAuto) isAutoSubmittingRef.current = true;
+    setSubmitting(true);
+
+    // Format current answers for payload
+    const formattedAnswers = Object.entries(selectedAnswers).map(([k, v]) => ({
+      questionIndex: Number(k),
+      selectedAnswer: v
+    }));
+
+    try {
+      const res = await API.post(`/student/quizzes/${id}/submit`, {
+        answers: formattedAnswers,
+        auto: isAuto
       });
+
+      if (res.data?.success && res.data?.data) {
+        toast.success(isAuto ? 'Time over! Quiz auto-submitted.' : 'Quiz submitted successfully!');
+        navigate(`/student/result/${id}`, {
+          state: {
+            resultData: {
+              ...res.data.data,
+              quiz: { _id: id }
+            }
+          }
+        });
+      }
+    } catch (err) {
+      const msg = err.response?.data?.message || 'Submission error';
+      toast.error(msg);
+      navigate('/student');
+    } finally {
+      setSubmitting(false);
+    }
+  }, [id, selectedAnswers, submitting, navigate]);
+
+  // Accurate countdown timer based on server deadline - (Date.now() + offset)
+  useEffect(() => {
+    if (!deadline) return;
+
+    const interval = setInterval(() => {
+      const currentServerTime = Date.now() + clockOffsetRef.current;
+      const remainingSecs = Math.max(0, Math.floor((deadline - currentServerTime) / 1000));
+      setSecondsRemaining(remainingSecs);
+
+      if (remainingSecs <= 0) {
+        clearInterval(interval);
+        submitQuizAnswers(true);
+      }
     }, 1000);
 
-    return () => clearInterval(timer);
-  }, []);
+    return () => clearInterval(interval);
+  }, [deadline, submitQuizAnswers]);
+
+  // Debounced auto-save on answer change (~1 second debounce)
+  const debouncedSaveAnswers = (newAnswers) => {
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    saveTimeoutRef.current = setTimeout(async () => {
+      const payloadAnswers = Object.entries(newAnswers).map(([k, v]) => ({
+        questionIndex: Number(k),
+        selectedAnswer: v
+      }));
+
+      try {
+        await API.put(`/student/quizzes/${id}/answers`, {
+          answers: payloadAnswers
+        });
+      } catch (err) {
+        console.error('Failed to autosave answers:', err);
+      }
+    }, 1000);
+  };
+
+  const handleSelectOption = (optIndex) => {
+    const updated = {
+      ...selectedAnswers,
+      [currentIndex]: optIndex
+    };
+    setSelectedAnswers(updated);
+    debouncedSaveAnswers(updated);
+  };
 
   const formatTime = (secs) => {
+    if (secs === null || secs === undefined) return '--:--';
     const m = Math.floor(secs / 60);
     const s = secs % 60;
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  const currentQuestion = questions[currentIndex] || {
-    questionText: 'Loading question...',
-    options: []
-  };
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#FFF8E7] flex items-center justify-center">
+        <Loader message="Synchronizing with server clock and loading questions..." />
+      </div>
+    );
+  }
 
-  const handleSelectOption = (optIndex) => {
-    setSelectedAnswers({
-      ...selectedAnswers,
-      [currentIndex]: optIndex
-    });
-    toast('Answer saved', {
-      duration: 1000,
-      icon: '💾',
-      style: {
-        border: '2px solid #000',
-        borderRadius: '4px',
-        background: '#FFF8E7',
-        color: '#000',
-        fontSize: '12px'
-      }
-    });
+  const currentQuestion = questions[currentIndex] || {
+    questionText: 'No question available',
+    options: []
   };
 
   const answeredCount = Object.keys(selectedAnswers).length;
   const unansweredCount = questions.length - answeredCount;
 
-  const handleFinalSubmit = (isAuto = false) => {
-    if (isAuto) {
-      toast('Time is up! Quiz auto-submitted.', { icon: '⏰' });
-    } else {
-      toast.success('Quiz submitted successfully!');
-    }
-    navigate('/student/result/att1');
-  };
-
   return (
     <div className="min-h-screen bg-[#FFF8E7] p-3 sm:p-6 lg:p-8 flex flex-col gap-6 max-w-6xl mx-auto">
-      {/* Top Header Bar: Quiz Title & Timer */}
+      {/* Top Header Bar: Question Title & Countdown Timer */}
       <header className="bg-white border-[3px] border-black p-4 rounded nb-card flex items-center justify-between gap-4 sticky top-4 z-20">
         <div>
           <span className="font-label text-xs uppercase font-bold text-neutral-600 block">
-            {quiz.subject}
+            LIVE ATTEMPT
           </span>
           <h1 className="font-headline text-lg sm:text-2xl font-bold uppercase tracking-tight text-black">
-            {quiz.title}
+            QUIZ ASSESSMENT
           </h1>
         </div>
 
-        {/* Hard Neo-Brutalist Timer */}
+        {/* Server-Synchronized Hard Timer */}
         <div
           className={`px-4 py-2 border-[3px] border-black rounded shadow-[4px_4px_0_#000000] flex items-center gap-2 ${
-            secondsRemaining < 120 ? 'bg-[#FF6B6B] animate-pulse text-white' : 'bg-[#FFDE59] text-black'
+            secondsRemaining !== null && secondsRemaining < 120
+              ? 'bg-[#FF6B6B] animate-pulse text-white'
+              : 'bg-[#FFDE59] text-black'
           }`}
         >
           <Clock size={22} className="shrink-0" />
@@ -111,7 +239,7 @@ export const QuizAttempt = () => {
                 QUESTION {currentIndex + 1} OF {questions.length}
               </span>
               <span className="font-mono text-xs font-bold text-neutral-600">
-                1 MARK • SINGLE CHOICE
+                1 MARK • NO NEGATIVE
               </span>
             </div>
 
@@ -124,7 +252,7 @@ export const QuizAttempt = () => {
             <div className="flex flex-col gap-3 mt-2">
               {currentQuestion.options.map((option, optIdx) => {
                 const isSelected = selectedAnswers[currentIndex] === optIdx;
-                const letter = String.fromCharCode(65 + optIdx); // A, B, C, D
+                const letter = String.fromCharCode(65 + optIdx);
 
                 return (
                   <button
@@ -246,14 +374,14 @@ export const QuizAttempt = () => {
         </aside>
       </div>
 
-      {/* Submit Confirmation Dialog */}
+      {/* Manual Submit Confirmation Dialog */}
       <ConfirmDialog
         isOpen={isSubmitModalOpen}
         onClose={() => setIsSubmitModalOpen(false)}
-        onConfirm={() => handleFinalSubmit(false)}
+        onConfirm={() => submitQuizAnswers(false)}
         title="SUBMIT QUIZ ASSESSMENT?"
         message={`You have answered ${answeredCount} of ${questions.length} questions. You still have ${unansweredCount} unanswered questions. Are you sure you want to finish?`}
-        confirmText="YES, SUBMIT NOW"
+        confirmText={submitting ? 'SUBMITTING...' : 'YES, SUBMIT NOW'}
         cancelText="CONTINUE QUIZ"
         variant="success"
       />

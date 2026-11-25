@@ -1,36 +1,20 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useApp } from '../context/AppContext';
-import { LogOut, Menu, User, Sparkles } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { LogOut, Menu, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export const Topbar = ({ onToggleSidebar }) => {
-  const { role, user, switchRole } = useApp();
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
 
   const handleLogout = () => {
+    logout();
     toast.success('Logged out successfully');
     navigate('/login');
   };
 
-  const handleRoleChange = (e) => {
-    const nextRole = e.target.value;
-    switchRole(nextRole);
-    toast(`Switched view to ${nextRole.toUpperCase()}`, {
-      icon: '🔄',
-      style: {
-        border: '3px solid #000',
-        borderRadius: '4px',
-        fontWeight: 'bold',
-        background: '#FFDE59',
-        color: '#000'
-      }
-    });
-
-    if (nextRole === 'student') navigate('/student');
-    else if (nextRole === 'faculty') navigate('/faculty');
-    else if (nextRole === 'admin') navigate('/admin');
-  };
+  const role = user?.role || 'student';
 
   return (
     <header className="bg-[#FFF8E7] border-b-[3px] border-black px-4 py-3 sm:px-6 flex items-center justify-between gap-4 sticky top-0 z-30">
@@ -48,7 +32,7 @@ export const Topbar = ({ onToggleSidebar }) => {
           onClick={() => {
             if (role === 'student') navigate('/student');
             else if (role === 'faculty') navigate('/faculty');
-            else navigate('/admin');
+            else if (role === 'admin') navigate('/admin');
           }}
           className="flex items-center gap-2 cursor-pointer"
         >
@@ -62,30 +46,19 @@ export const Topbar = ({ onToggleSidebar }) => {
       </div>
 
       <div className="flex items-center gap-2 sm:gap-4">
-        {/* TODO: REMOVE ROLE SWITCHER IN PRODUCTION - For demo navigation between layouts */}
-        <div className="flex items-center gap-1.5 bg-[#FFE885] border-2 border-black px-2 py-1 rounded shadow-[2px_2px_0_#000000]">
-          <span className="font-label text-xs uppercase font-bold hidden md:inline">
-            Role:
-          </span>
-          <select
-            value={role}
-            onChange={handleRoleChange}
-            className="font-label text-xs uppercase font-bold bg-transparent border-none outline-none cursor-pointer"
-          >
-            <option value="student">Student</option>
-            <option value="faculty">Faculty</option>
-            <option value="admin">Admin</option>
-          </select>
-        </div>
-
         {/* User Chip */}
         <div className="flex items-center gap-2 bg-white border-2 border-black px-3 py-1.5 rounded shadow-[2px_2px_0_#000000]">
           <div className="w-6 h-6 rounded-full bg-[#4D96FF] border border-black flex items-center justify-center text-xs font-bold font-label">
-            {user?.name?.[0] || 'U'}
+            {user?.name?.[0]?.toUpperCase() || 'U'}
           </div>
-          <span className="font-label text-xs sm:text-sm uppercase font-bold hidden sm:inline">
-            {user?.name || 'User'}
-          </span>
+          <div className="flex flex-col">
+            <span className="font-label text-xs sm:text-sm uppercase font-bold text-black leading-tight">
+              {user?.name || 'User'}
+            </span>
+            <span className="font-mono text-[10px] text-neutral-600 uppercase font-semibold leading-none">
+              {user?.role}
+            </span>
+          </div>
         </div>
 
         {/* Red Logout Button */}
