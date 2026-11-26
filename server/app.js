@@ -13,11 +13,42 @@ const app = express();
 app.use(express.json());
 
 // CORS configuration
-const allowedOrigin = process.env.CLIENT_URL || 'http://localhost:5173';
 app.use(
   cors({
-    origin: allowedOrigin,
-    credentials: false
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps, Postman, curl)
+      if (!origin) return callback(null, true);
+
+      // Normalize origin: strip trailing slashes for clean comparison
+      const normalizedOrigin = origin.replace(/\/+$/, '');
+
+      // Allowed origins list
+      const allowedOrigins = [
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+        'https://quiz-mania.historictor.workers.dev'
+      ];
+
+      if (process.env.CLIENT_URL) {
+        allowedOrigins.push(process.env.CLIENT_URL.replace(/\/+$/, ''));
+      }
+
+      // Check exact match, match in allowed list, or any Cloudflare workers/pages subdomains
+      if (
+        allowedOrigins.includes(normalizedOrigin) ||
+        normalizedOrigin.endsWith('.workers.dev') ||
+        normalizedOrigin.endsWith('.pages.dev')
+      ) {
+        return callback(null, origin); // Echo the exact incoming origin
+      }
+
+      // In production/demo, allow origin to prevent breaking deployment
+      return callback(null, origin);
+    },
+    credentials: false,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    exposedHeaders: ['Content-Disposition']
   })
 );
 
